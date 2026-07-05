@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>月面探索シミュレーター</title>
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000; touch-action:none; overscroll-behavior:none;
+    font-family:'BIZ UDPGothic', sans-serif; }
+  #c { position:fixed; inset:0; display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  #topbar { position:absolute; top:calc(8px + env(safe-area-inset-top)); left:12px; right:12px;
+    display:flex; align-items:flex-start; gap:10px; }
+  #energyWrap { flex:1; max-width:340px; }
+  #energyLabel { color:#cfd6e0; font-size:12px; letter-spacing:.08em; margin-bottom:3px;
+    text-shadow:0 1px 3px #000; display:flex; justify-content:space-between; }
+  #energyBar { height:16px; border-radius:8px; background:rgba(255,255,255,.12);
+    border:1px solid rgba(255,255,255,.35); overflow:hidden; }
+  #energyFill { height:100%; width:100%; border-radius:7px;
+    background:linear-gradient(90deg,#37e08a,#a6e837); transition:background .4s; }
+  #rocks { display:flex; gap:6px; align-items:center; margin-top:6px; }
+  .rockSlot { width:26px; height:26px; border-radius:50%; border:2px dashed rgba(255,255,255,.45);
+    display:flex; align-items:center; justify-content:center; font-size:15px; background:rgba(0,0,0,.3); }
+  .rockSlot.got { border:2px solid #ffd75e; background:rgba(255,215,94,.18); box-shadow:0 0 10px rgba(255,215,94,.7); }
+
+  #radarBox { margin-left:auto; text-align:center; }
+  #radar { width:128px; height:128px; border-radius:50%;
+    background:rgba(6,14,24,.72); border:1px solid rgba(140,200,255,.5);
+    box-shadow:0 0 12px rgba(80,160,255,.25) inset; }
+  #speedo { color:#cfe8ff; font-size:12px; margin-top:2px; text-shadow:0 1px 3px #000; font-weight:700; }
+
+  #msg { position:absolute; top:calc(78px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    color:#fff; font-size:clamp(14px,2.4vw,19px); font-weight:700; text-align:center;
+    background:rgba(0,0,0,.45); padding:7px 18px; border-radius:20px; text-shadow:0 1px 3px #000;
+    border:1px solid rgba(255,255,255,.18); white-space:nowrap; max-width:92vw; }
+  #msg.alert { color:#ffd75e; border-color:rgba(255,215,94,.6); }
+  #msg.warn  { color:#ff7d6e; border-color:rgba(255,125,110,.6); animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.45; } }
+
+  /* ---------- 操作ボタン ---------- */
+  .btn { position:fixed; z-index:20; border-radius:50%;
+    border:2px solid rgba(255,255,255,.55); color:#fff; font-family:inherit; font-weight:700;
+    background:rgba(30,38,52,.55); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    touch-action:none; text-shadow:0 1px 2px #000; }
+  .btn:active, .btn.on { background:rgba(120,170,255,.55); transform:scale(.94); }
+  .btn small { font-size:11px; font-weight:400; opacity:.85; margin-top:-2px; }
+
+  #btnL, #btnR { width:84px; height:84px; font-size:34px; bottom:calc(26px + env(safe-area-inset-bottom)); }
+  #btnL { left:calc(22px + env(safe-area-inset-left)); }
+  #btnR { left:calc(122px + env(safe-area-inset-left)); }
+
+  #btnB, #btnA { width:88px; height:88px; font-size:30px; bottom:calc(26px + env(safe-area-inset-bottom)); }
+  #btnA { right:calc(24px + env(safe-area-inset-right)); background:rgba(60,120,70,.55); }
+  #btnB { right:calc(128px + env(safe-area-inset-right)); background:rgba(140,50,50,.55); }
+  #btnC { width:80px; height:80px; font-size:26px;
+    right:calc(28px + env(safe-area-inset-right)); bottom:calc(128px + env(safe-area-inset-bottom));
+    background:rgba(160,130,30,.55); }
+  #btnC.ready { animation:pulseC .8s infinite; border-color:#ffe27a; }
+  @keyframes pulseC { 50% { box-shadow:0 0 22px 6px rgba(255,215,94,.85); background:rgba(220,180,50,.75); } }
+
+  /* ---------- オーバーレイ ---------- */
+  .overlay { position:fixed; inset:0; z-index:40; background:rgba(2,4,10,.82);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; color:#fff; text-align:center;
+    padding:20px; }
+  .overlay h1 { font-size:clamp(22px,4.5vw,34px); margin-bottom:14px; letter-spacing:.06em; }
+  .overlay p  { font-size:clamp(13px,2.2vw,17px); line-height:1.9; color:#d7dde8; }
+  .overlay .go { margin-top:22px; font-family:inherit; font-size:19px; font-weight:700; color:#08131f;
+    background:linear-gradient(180deg,#ffe9a8,#ffc94d); border:none; border-radius:30px;
+    padding:14px 46px; box-shadow:0 4px 18px rgba(255,200,80,.4); }
+  .overlay .go:active { transform:scale(.96); }
+  .hidden { display:none !important; }
+  #flash { position:fixed; inset:0; z-index:30; background:#fff; opacity:0; pointer-events:none;
+    transition:opacity .5s; }
+  .flare { position:fixed; border-radius:50%; pointer-events:none; z-index:5; mix-blend-mode:screen; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="topbar">
+    <div id="energyWrap">
+      <div id="energyLabel"><span>エネルギー</span><span id="energyPct">100%</span></div>
+      <div id="energyBar"><div id="energyFill"></div></div>
+      <div id="rocks">
+        <div class="rockSlot" id="slot0">🪨</div>
+        <div class="rockSlot" id="slot1">🪨</div>
+        <span style="color:#cfd6e0;font-size:12px;text-shadow:0 1px 3px #000;">月の石</span>
+      </div>
+    </div>
+    <div id="radarBox">
+      <canvas id="radar" width="128" height="128"></canvas>
+      <div id="speedo">0 km/h</div>
+    </div>
+  </div>
+  <div id="msg">月の石をさがそう</div>
+</div>
+
+<div class="btn" id="btnL">◁</div>
+<div class="btn" id="btnR">▷</div>
+<div class="btn" id="btnB">B<small>ブレーキ</small></div>
+<div class="btn" id="btnA">A<small>アクセル</small></div>
+<div class="btn" id="btnC">C<small>キャッチ</small></div>
+
+<div id="flash"></div>
+
+<div class="overlay" id="intro">
+  <h1>🌙 月面探索ミッション</h1>
+  <p>
+    月の重力は 地球の <b>1/6</b>。ふわっと浮くから急には止まれない！<br><br>
+    ◁ ▷ … 左右にまがる ／ <b style="color:#8fe08f">A</b> … アクセル ／ <b style="color:#ff9d8f">B</b> … ブレーキ<br>
+    <b style="color:#ffe27a">月の石</b>のそばで <b style="color:#ff9d8f">B</b>でしっかり減速 → <b style="color:#ffe27a">C</b>でキャッチ！<br><br>
+    石を <b>2個</b> あつめて、エネルギーが切れる前に<br>
+    <b style="color:#7ce0a0">緑の基地パッド</b>の上に「ぴたっ」と停止してもどろう。
+  </p>
+  <button class="go" id="startBtn">ミッション開始</button>
+</div>
+
+<div class="overlay hidden" id="result">
+  <h1 id="resultTitle"></h1>
+  <p id="resultText"></p>
+  <button class="go" id="retryBtn">もういちど</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ================= 基本設定 ================= */
+const G = 1.62;                 // 月の重力 (地球の約1/6)
+const TERRAIN = 400;            // 地形サイズ(m)
+const MAX_SPEED = 13;
+const CATCH_DIST = 6.0;         // キャッチ可能距離
+const CATCH_SPEED = 2.5;        // キャッチ可能速度(m/s) → ブレーキ必須
+const HOME_DIST = 5.0;          // 帰還判定距離
+const HOME_SPEED = 0.5;         // 帰還時はほぼ完全停止
+const ENERGY_MAX = 100;
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000005);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 3000);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ================= 光源 (大気なし=影がくっきり) ================= */
+const sunDir = new THREE.Vector3(0.55, 0.42, 0.35).normalize();
+const sun = new THREE.DirectionalLight(0xfff6e8, 3.2);
+sun.position.copy(sunDir).multiplyScalar(120);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60;  sun.shadow.camera.bottom = -60;
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 300;
+sun.shadow.bias = -0.0015;
+scene.add(sun); scene.add(sun.target);
+scene.add(new THREE.AmbientLight(0x223044, 0.9)); // 地球照のかすかな青
+
+/* ================= 地形 (凸凹の月面) ================= */
+function hash(ix, iz){ let n = ix*374761393 + iz*668265263; n = (n ^ (n>>13)) * 1274126177; return ((n ^ (n>>16)) >>> 0) / 4294967295; }
+function vnoise(x, z){
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x-ix, fz = z-iz;
+  const a=hash(ix,iz), b=hash(ix+1,iz), c=hash(ix,iz+1), d=hash(ix+1,iz+1);
+  const ux = fx*fx*(3-2*fx), uz = fz*fz*(3-2*fz);
+  return a*(1-ux)*(1-uz) + b*ux*(1-uz) + c*(1-ux)*uz + d*ux*uz;
+}
+function smoothstep(a,b,x){ x = Math.min(1, Math.max(0, (x-a)/(b-a))); return x*x*(3-2*x); }
+
+// クレーター群
+const craters = [];
+for (let i=0; i<26; i++){
+  const ang = Math.random()*Math.PI*2, dist = 30 + Math.random()*160;
+  craters.push({ x: Math.cos(ang)*dist, z: Math.sin(ang)*dist,
+    r: 5 + Math.random()*14, depth: 0.8 + Math.random()*2.0 });
+}
+function terrainHeight(x, z){
+  let h = (vnoise(x*0.02,      z*0.02     ) - 0.5) * 2 * 3.0;   // 大きなうねり
+  h    += (vnoise(x*0.07+13,   z*0.07+7   ) - 0.5) * 2 * 0.9;   // 中くらいの起伏
+  h    += (vnoise(x*0.30+31,   z*0.30+17  ) - 0.5) * 2 * 0.20;  // 細かいデコボコ
+  for (const c of craters){
+    const dx = x-c.x, dz = z-c.z, d = Math.sqrt(dx*dx+dz*dz)/c.r;
+    if (d < 1)   h += c.depth * (d*d - 1);                                   // くぼみ
+    if (d < 1.5) h += c.depth * 0.35 * Math.exp(-((d-1)*(d-1))/0.02);        // リム(縁)
+  }
+  h *= smoothstep(5, 15, Math.hypot(x, z));  // スタート地点付近は平ら
+  return h;
+}
+
+// タイヤ痕を描くキャンバステクスチャ
+const gCanvas = document.createElement('canvas');
+gCanvas.width = gCanvas.height = 1024;
+const gctx = gCanvas.getContext('2d');
+gctx.fillStyle = '#8d8d92'; gctx.fillRect(0,0,1024,1024);
+for (let i=0; i<26000; i++){                 // レゴリスの細かいまだら
+  const v = 120 + Math.random()*60 | 0;
+  gctx.fillStyle = `rgb(${v},${v},${v+4})`;
+  gctx.fillRect(Math.random()*1024, Math.random()*1024, 1.6, 1.6);
+}
+const groundTex = new THREE.CanvasTexture(gCanvas);
+function worldToCanvas(x, z){ return [ (x+TERRAIN/2)/TERRAIN*1024, (0.5 + z/TERRAIN)*1024 ]; }
+let texDirty = false;
+function drawTrack(x, z, size, alpha){
+  const [px, py] = worldToCanvas(x, z);
+  gctx.fillStyle = `rgba(58,58,64,${alpha})`;
+  gctx.beginPath(); gctx.arc(px, py, size, 0, Math.PI*2); gctx.fill();
+  texDirty = true;
+}
+
+const tGeo = new THREE.PlaneGeometry(TERRAIN, TERRAIN, 150, 150);
+tGeo.rotateX(-Math.PI/2);
+{
+  const pos = tGeo.attributes.position;
+  for (let i=0; i<pos.count; i++) pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i)));
+  tGeo.computeVertexNormals();
+}
+const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1, metalness: 0 }));
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+/* ================= 星空・天の川・地球 ================= */
+function makeStars(count, spread, size, color, band){
+  const p = new Float32Array(count*3);
+  const axis = new THREE.Vector3(0.4, 1, 0.25).normalize();
+  for (let i=0; i<count; i++){
+    let v = new THREE.Vector3().randomDirection();
+    if (band){ // 天の川: 傾いた帯に集める
+      const d = v.dot(axis);
+      v.addScaledVector(axis, -d*0.92).normalize();
+      v.x += (Math.random()-0.5)*0.12; v.y += (Math.random()-0.5)*0.12; v.z += (Math.random()-0.5)*0.12;
+      v.normalize();
+    }
+    p[i*3]=v.x*spread; p[i*3+1]=Math.abs(v.y)>0.02||band? v.y*spread : v.y*spread; p[i*3+2]=v.z*spread;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation:false, transparent:true, opacity: band?0.5:0.95, depthWrite:false }));
+}
+scene.add(makeStars(2600, 1400, 1.6, 0xffffff, false));
+scene.add(makeStars(4200, 1400, 1.1, 0xbdd4ff, true));   // 天の川
+
+// 地球
+const eCanvas = document.createElement('canvas'); eCanvas.width = eCanvas.height = 256;
+{
+  const e = eCanvas.getContext('2d');
+  const grad = e.createRadialGradient(100,100,20,128,128,128);
+  grad.addColorStop(0,'#5aa8e8'); grad.addColorStop(1,'#1d5fb0');
+  e.fillStyle = grad; e.fillRect(0,0,256,256);
+  e.fillStyle = 'rgba(70,160,90,.85)';
+  for (let i=0;i<8;i++){ e.beginPath(); e.ellipse(Math.random()*256, Math.random()*256, 15+Math.random()*35, 10+Math.random()*22, Math.random()*3, 0, Math.PI*2); e.fill(); }
+  e.fillStyle = 'rgba(255,255,255,.55)';
+  for (let i=0;i<14;i++){ e.beginPath(); e.ellipse(Math.random()*256, Math.random()*256, 20+Math.random()*40, 5+Math.random()*9, Math.random()*3, 0, Math.PI*2); e.fill(); }
+}
+const earth = new THREE.Mesh(
+  new THREE.SphereGeometry(34, 32, 32),
+  new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(eCanvas), roughness: .8 })
+);
+earth.position.set(-420, 330, -700);
+scene.add(earth);
+
+/* ================= 基地・着陸船・旗 ================= */
+const homeGroup = new THREE.Group();
+{
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(4.2, 40),
+    new THREE.MeshBasicMaterial({ color: 0x2fe08a, transparent: true, opacity: 0.28 }));
+  pad.rotation.x = -Math.PI/2; pad.position.y = 0.04;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(3.9, 4.4, 40),
+    new THREE.MeshBasicMaterial({ color: 0x6affc0, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI/2; ring.position.y = 0.06;
+  homeGroup.add(pad, ring);
+  homeGroup.userData.ring = ring;
+
+  // 着陸船
+  const lander = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: .5, metalness: .5 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: .35, metalness: .8 });
+  const lb = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.9, 1.6, 8), goldMat); lb.position.y = 1.6;
+  const lt = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.3, 1.2, 8), bodyMat); lt.position.y = 3.0;
+  lander.add(lb, lt);
+  for (let i=0;i<4;i++){
+    const a = i*Math.PI/2 + Math.PI/4;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,2.4,6), bodyMat);
+    leg.position.set(Math.cos(a)*2.0, 1.0, Math.sin(a)*2.0);
+    leg.rotation.z = Math.cos(a)*0.5; leg.rotation.x = -Math.sin(a)*0.5;
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.45,0.12,10), bodyMat);
+    foot.position.set(Math.cos(a)*2.6, 0.08, Math.sin(a)*2.6);
+    lander.add(leg, foot);
+  }
+  lander.position.set(-8, 0, -6);
+  lander.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  homeGroup.add(lander);
+
+  // 旗
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,2.6,6), bodyMat);
+  pole.position.set(7, 1.3, -4);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0xff5a4d, side: THREE.DoubleSide, roughness:.8 }));
+  flag.position.set(7.68, 2.15, -4);
+  homeGroup.add(pole, flag);
+}
+scene.add(homeGroup);
+
+/* ================= 探査車 ================= */
+const car = new THREE.Group();
+car.rotation.order = 'YXZ';
+{
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ec, roughness: .45, metalness: .4 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: .3, metalness: .85 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x33363c, roughness: .95 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 2.3), bodyMat); body.position.y = 0.62;
+  const foil = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.4, 0.8), goldMat);  foil.position.set(0, 0.95, -0.6);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.5), darkMat); seat.position.set(0, 0.95, 0.25);
+  // 宇宙飛行士
+  const astro = new THREE.Group();
+  const suitMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f6, roughness: .6 });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.35), suitMat); torso.position.y = 1.35;
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 14), suitMat); helmet.position.y = 1.78;
+  const visor = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffb63d, roughness:.15, metalness:.7 }));
+  visor.position.set(0, 1.78, 0.1);
+  astro.add(torso, helmet, visor); astro.position.z = 0.25;
+  // アンテナ
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,1.0,6), bodyMat); mast.position.set(-0.5, 1.4, -0.9);
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8, 0, Math.PI*2, 0, Math.PI/2), bodyMat);
+  dish.position.set(-0.5, 1.95, -0.9); dish.rotation.x = Math.PI*0.9;
+  car.add(body, foil, seat, astro, mast, dish);
+
+  // 車輪 (メッシュタイヤ風)
+  car.userData.wheels = [];
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 14);
+  wheelGeo.rotateZ(Math.PI/2);
+  for (const [x, z] of [[-0.75, 0.85], [0.75, 0.85], [-0.75, -0.85], [0.75, -0.85]]){
+    const w = new THREE.Mesh(wheelGeo, darkMat);
+    w.position.set(x, 0.42, z);
+    car.add(w); car.userData.wheels.push(w);
+  }
+  car.traverse(o => { if (o.isMesh) o.castShadow = true; });
+}
+scene.add(car);
+
+/* ================= 月の石 (ランダム配置) ================= */
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b6f78, roughness: .9, emissive: 0x3355aa, emissiveIntensity: 0.25 });
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+let rocks = [];
+function spawnRocks(){
+  for (const r of rocks) scene.remove(r.group);
+  rocks = [];
+  const placed = [];
+  for (let i=0; i<2; i++){
+    let x, z, ok = false, tries = 0;
+    while (!ok && tries++ < 60){
+      const a = Math.random()*Math.PI*2, d = 70 + Math.random()*70;
+      x = Math.cos(a)*d; z = Math.sin(a)*d;
+      ok = placed.every(p => Math.hypot(p[0]-x, p[1]-z) > 60);
+    }
+    placed.push([x, z]);
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 0), rockMat.clone());
+    mesh.castShadow = true; mesh.position.y = 0.6;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 40, 10, 1, true), beamMat.clone());
+    beam.position.y = 20;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(CATCH_DIST-0.4, CATCH_DIST, 44),
+      new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI/2; ring.position.y = 0.15;
+    group.add(mesh, beam, ring);
+    group.position.set(x, terrainHeight(x, z), z);
+    scene.add(group);
+    rocks.push({ group, mesh, beam, ring, x, z, got: false });
+  }
+}
+
+/* ================= パーティクル ================= */
+function makeParticleSystem(n, color, size){
+  const pos = new Float32Array(n*3).fill(-999);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    color, size, transparent: true, opacity: 0.85, depthWrite: false }));
+  pts.frustumCulled = false;
+  scene.add(pts);
+  return { pts, pos, data: Array.from({length:n}, () => ({ life: 0, vx:0, vy:0, vz:0, x:0, y:0, z:0 })), cursor: 0, n };
+}
+const dust    = makeParticleSystem(160, 0x9a9aa0, 0.22);   // 砂埃(ゆっくり舞う)
+const sparkle = makeParticleSystem(80,  0xffe27a, 0.35);   // キャッチ演出
+
+function emit(sys, x, y, z, vx, vy, vz, life){
+  const p = sys.data[sys.cursor]; sys.cursor = (sys.cursor+1) % sys.n;
+  p.x=x; p.y=y; p.z=z; p.vx=vx; p.vy=vy; p.vz=vz; p.life=life;
+}
+function updateParticles(sys, dt, grav){
+  for (let i=0; i<sys.n; i++){
+    const p = sys.data[i];
+    if (p.life > 0){
+      p.life -= dt;
+      p.vy -= grav*dt;
+      p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+      const gy = terrainHeight(p.x, p.z);
+      if (p.y < gy) { p.y = gy + 0.02; p.vy = 0; p.vx *= 0.6; p.vz *= 0.6; }
+      sys.pos[i*3]=p.x; sys.pos[i*3+1]=p.y; sys.pos[i*3+2]=p.z;
+    } else { sys.pos[i*3+1] = -999; }
+  }
+  sys.pts.geometry.attributes.position.needsUpdate = true;
+}
+
+// キャッチ時の広がるリング
+const catchRing = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.1, 40),
+  new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite:false }));
+catchRing.rotation.x = -Math.PI/2;
+scene.add(catchRing);
+let catchRingT = -1;
+
+/* ================= レンズフレア (DOM) ================= */
+const flares = [ [70, 0.0, 'rgba(255,244,214,.9)'], [26, 0.45, 'rgba(255,210,140,.5)'], [14, 0.8, 'rgba(180,220,255,.45)'] ]
+  .map(([sz, t, col]) => {
+    const d = document.createElement('div');
+    d.className = 'flare'; d.style.width = d.style.height = sz+'px';
+    d.style.background = `radial-gradient(circle, ${col} 0%, transparent 70%)`;
+    d.dataset.t = t; document.body.appendChild(d); return d;
+  });
+const sunWorld = sunDir.clone().multiplyScalar(1200);
+function updateFlare(){
+  const v = sunWorld.clone().project(camera);
+  const front = v.z < 1;
+  const sx = ( v.x*0.5 + 0.5) * innerWidth, sy = (-v.y*0.5 + 0.5) * innerHeight;
+  const inView = front && sx > -100 && sx < innerWidth+100 && sy > -100 && sy < innerHeight+100;
+  for (const f of flares){
+    if (!inView){ f.style.opacity = 0; continue; }
+    const t = parseFloat(f.dataset.t);
+    const x = sx + (innerWidth/2 - sx)*t, y = sy + (innerHeight/2 - sy)*t;
+    f.style.opacity = 1;
+    f.style.left = (x - f.offsetWidth/2) + 'px';
+    f.style.top  = (y - f.offsetHeight/2) + 'px';
+  }
+}
+
+/* ================= サウンド (Web Audio) ================= */
+let AC = null, engineOsc, engineGain, engineFilter;
+function initAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    engineOsc = AC.createOscillator(); engineOsc.type = 'sawtooth'; engineOsc.frequency.value = 35;
+    engineFilter = AC.createBiquadFilter(); engineFilter.type = 'lowpass'; engineFilter.frequency.value = 260;
+    engineGain = AC.createGain(); engineGain.gain.value = 0;
+    engineOsc.connect(engineFilter).connect(engineGain).connect(AC.destination);
+    engineOsc.start();
+    // 宇宙服の呼吸音っぽいアンビエント
+    const len = AC.sampleRate * 2, buf = AC.createBuffer(1, len, AC.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i=0; i<len; i++) ch[i] = (Math.random()*2-1) * 0.5;
+    const noise = AC.createBufferSource(); noise.buffer = buf; noise.loop = true;
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 480; bp.Q.value = 0.8;
+    const ng = AC.createGain(); ng.gain.value = 0.02;
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.22;
+    const lg = AC.createGain(); lg.gain.value = 0.013;
+    lfo.connect(lg).connect(ng.gain);
+    noise.connect(bp).connect(ng).connect(AC.destination);
+    noise.start(); lfo.start();
+  } catch(e){}
+}
+function beep(freq, dur, type='sine', vol=0.18, when=0){
+  if (!AC) return;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, AC.currentTime + when);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + when + dur);
+  o.connect(g).connect(AC.destination);
+  o.start(AC.currentTime + when); o.stop(AC.currentTime + when + dur + 0.05);
+}
+const sfxCatch  = () => { beep(880, .25); beep(1320, .4, 'sine', .18, .12); };
+const sfxOK     = () => { [523, 659, 784, 1047].forEach((f, i) => beep(f, .35, 'triangle', .16, i*0.14)); };
+const sfxFail   = () => { beep(180, .7, 'sawtooth', .12); beep(120, .9, 'sawtooth', .1, .25); };
+const sfxLand   = () => beep(70, .12, 'sine', .2);
+
+/* ================= 入力 ================= */
+const input = { left:false, right:false, accel:false, brake:false };
+function bindHold(id, key){
+  const el = document.getElementById(id);
+  const on  = e => { e.preventDefault(); input[key] = true;  el.classList.add('on'); };
+  const off = e => { e.preventDefault(); input[key] = false; el.classList.remove('on'); };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('pointerleave', off);
+}
+bindHold('btnL', 'left'); bindHold('btnR', 'right');
+bindHold('btnA', 'accel'); bindHold('btnB', 'brake');
+document.getElementById('btnC').addEventListener('pointerdown', e => { e.preventDefault(); tryCatch(); });
+
+// PCテスト用
+addEventListener('keydown', e => {
+  if (e.key==='ArrowLeft') input.left = true;
+  if (e.key==='ArrowRight') input.right = true;
+  if (e.key==='ArrowUp' || e.key==='a') input.accel = true;
+  if (e.key==='ArrowDown' || e.key==='b') input.brake = true;
+  if (e.key==='c' || e.key===' ') tryCatch();
+});
+addEventListener('keyup', e => {
+  if (e.key==='ArrowLeft') input.left = false;
+  if (e.key==='ArrowRight') input.right = false;
+  if (e.key==='ArrowUp' || e.key==='a') input.accel = false;
+  if (e.key==='ArrowDown' || e.key==='b') input.brake = false;
+});
+
+/* ================= ゲーム状態 ================= */
+const state = {
+  mode: 'intro',    // intro | play | success | fail
+  x: 0, z: 6, y: 0, vy: 0, heading: Math.PI,  // 基地から出発
+  speed: 0, grounded: true, prevGroundY: 0,
+  energy: ENERGY_MAX, got: 0, homeDwell: 0, wheelSpin: 0,
+};
+const $ = id => document.getElementById(id);
+const msgEl = $('msg'), energyFill = $('energyFill'), energyPct = $('energyPct'), speedo = $('speedo');
+const btnC = $('btnC');
+
+function reset(){
+  Object.assign(state, { x:0, z:6, y:terrainHeight(0,6), vy:0, heading:Math.PI,
+    speed:0, grounded:true, prevGroundY:terrainHeight(0,6), energy:ENERGY_MAX, got:0, homeDwell:0 });
+  $('slot0').classList.remove('got'); $('slot1').classList.remove('got');
+  spawnRocks();
+  setMsg('月の石をさがそう（レーダーの黄色い点）', '');
+}
+function setMsg(t, cls){ msgEl.textContent = t; msgEl.className = cls || ''; }
+
+function currentTarget(){
+  if (state.got < 2){
+    let best = null, bd = 1e9;
+    for (const r of rocks){ if (r.got) continue;
+      const d = Math.hypot(r.x-state.x, r.z-state.z);
+      if (d < bd){ bd = d; best = r; } }
+    return { x: best.x, z: best.z, d: bd, kind: 'rock' };
+  }
+  return { x: 0, z: 0, d: Math.hypot(state.x, state.z), kind: 'home' };
+}
+
+function tryCatch(){
+  if (state.mode !== 'play' || state.got >= 2) return;
+  for (const r of rocks){
+    if (r.got) continue;
+    const d = Math.hypot(r.x-state.x, r.z-state.z);
+    if (d < CATCH_DIST && Math.abs(state.speed) < CATCH_SPEED){
+      r.got = true; state.got++;
+      r.group.remove(r.mesh, r.beam, r.ring);
+      $('slot' + (state.got-1)).classList.add('got');
+      // エフェクト: 光の輪 + きらきら + フラッシュ
+      catchRing.position.set(r.x, r.group.position.y + 0.3, r.z);
+      catchRingT = 0;
+      for (let i=0; i<50; i++){
+        const a = Math.random()*Math.PI*2, sp = 1.5 + Math.random()*3;
+        emit(sparkle, r.x, r.group.position.y + 0.8, r.z,
+          Math.cos(a)*sp, 2.5 + Math.random()*3.5, Math.sin(a)*sp, 2.5 + Math.random()*1.5);
+      }
+      $('flash').style.opacity = 0.7;
+      setTimeout(() => $('flash').style.opacity = 0, 60);
+      sfxCatch();
+      setMsg(state.got < 2 ? '🪨 ゲット！ あと1個！' : '🪨 2個そろった！ 緑のパッドにもどって停止！', 'alert');
+      return;
+    }
+  }
+  beep(220, .12, 'square', .08); // 空振り
+}
+
+/* ================= レーダー ================= */
+const rctx = $('radar').getContext('2d');
+function drawRadar(){
+  const S = 128, R = 60, cx = S/2, cy = S/2, range = 180;
+  rctx.clearRect(0, 0, S, S);
+  rctx.strokeStyle = 'rgba(140,200,255,.35)';
+  for (const rr of [R, R*0.55]){ rctx.beginPath(); rctx.arc(cx, cy, rr, 0, Math.PI*2); rctx.stroke(); }
+  rctx.beginPath(); rctx.moveTo(cx, cy-R); rctx.lineTo(cx, cy+R); rctx.moveTo(cx-R, cy); rctx.lineTo(cx+R, cy); rctx.stroke();
+  const cos = Math.cos(-state.heading), sin = Math.sin(-state.heading);
+  const plot = (wx, wz, color, size, square) => {
+    let dx = wx - state.x, dz = wz - state.z;
+    let rx = dx*cos - dz*sin, rz = dx*sin + dz*cos;   // 進行方向が上
+    let px = rx / range * R, py = rz / range * R;
+    const len = Math.hypot(px, py);
+    if (len > R-4){ px *= (R-4)/len; py *= (R-4)/len; }
+    rctx.fillStyle = color;
+    if (square) rctx.fillRect(cx+px-size, cy-py-size, size*2, size*2);
+    else { rctx.beginPath(); rctx.arc(cx+px, cy-py, size, 0, Math.PI*2); rctx.fill(); }
+  };
+  plot(0, 0, '#4dff9d', 4, true);                        // 基地
+  for (const r of rocks) if (!r.got) plot(r.x, r.z, '#ffd75e', 4, false);  // 石
+  // 自機 (中央の三角、上向き)
+  rctx.fillStyle = '#fff';
+  rctx.beginPath(); rctx.moveTo(cx, cy-6); rctx.lineTo(cx-4.5, cy+5); rctx.lineTo(cx+4.5, cy+5); rctx.fill();
+}
+
+/* ================= メインループ ================= */
+let last = performance.now();
+const camPos = new THREE.Vector3(0, 6, 14);
+
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - last) / 1000, 0.05);   // 120Hz iPad対応: delta-time正規化
+  last = now;
+  const t = now / 1000;
+
+  if (state.mode === 'play'){
+    /* --- 走行 (慣性強め・急に止まれない) --- */
+    if (state.grounded){
+      if (input.accel) state.speed += 6.5 * dt;
+      if (input.brake) state.speed -= Math.sign(state.speed) * Math.min(Math.abs(state.speed), 5.5 * dt);
+      state.speed -= state.speed * 0.06 * dt;         // 転がり抵抗はごくわずか
+    }
+    state.speed = Math.max(-2, Math.min(MAX_SPEED, state.speed));
+    if (Math.abs(state.speed) < 0.02 && !input.accel) state.speed = 0;
+
+    const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const turnFactor = 0.55 + Math.min(Math.abs(state.speed) / 6, 1) * 0.85;
+    state.heading += steer * 1.5 * turnFactor * dt;
+
+    const fx = Math.sin(state.heading), fz = Math.cos(state.heading);
+    state.x += fx * state.speed * dt;
+    state.z += fz * state.speed * dt;
+    state.x = Math.max(-TERRAIN/2+8, Math.min(TERRAIN/2-8, state.x));
+    state.z = Math.max(-TERRAIN/2+8, Math.min(TERRAIN/2-8, state.z));
+
+    /* --- 上下 (重力1/6でふわっと) --- */
+    const gY = terrainHeight(state.x, state.z);
+    state.vy -= G * dt;
+    state.y += state.vy * dt;
+    if (state.y <= gY){
+      if (!state.grounded && state.vy < -1.2){        // 着地
+        sfxLand();
+        for (let i=0; i<8; i++){
+          const a = Math.random()*Math.PI*2;
+          emit(dust, state.x, gY+0.15, state.z, Math.cos(a)*1.5, 0.8+Math.random()*1.2, Math.sin(a)*1.5, 2.5);
+        }
+      }
+      state.y = gY;
+      state.vy = Math.max(-6, Math.min(9, (gY - state.prevGroundY) / Math.max(dt, 1e-4)));
+      if (state.vy < 0) state.vy = 0;
+      state.grounded = true;
+    } else {
+      state.grounded = state.y - gY < 0.05;
+    }
+    state.prevGroundY = gY;
+
+    /* --- 傾斜で加減速 (下り坂で加速→ブレーキの意味) --- */
+    if (state.grounded){
+      const ahead = terrainHeight(state.x + fx*1.5, state.z + fz*1.5);
+      state.speed -= (ahead - gY) / 1.5 * G * 0.55 * dt * Math.sign(state.speed || 1) * (state.speed !== 0 ? 1 : 0);
+    }
+
+    /* --- 砂埃 & タイヤ痕 --- */
+    if (state.grounded && Math.abs(state.speed) > 1.2){
+      state.wheelSpin += dt;
+      if (state.wheelSpin > 0.03){
+        state.wheelSpin = 0;
+        for (const side of [-0.6, 0.6]){
+          const wx = state.x - fx*0.9 + Math.cos(state.heading)*side;
+          const wz = state.z - fz*0.9 - Math.sin(state.heading)*side;
+          drawTrack(wx, wz, 1.6, 0.28);
+          if (Math.random() < 0.7)
+            emit(dust, wx, state.y+0.2, wz,
+              -fx*state.speed*0.25 + (Math.random()-0.5), 0.6 + Math.random()*1.6, -fz*state.speed*0.25 + (Math.random()-0.5),
+              2.0 + Math.random()*1.5);
+        }
+      }
+    }
+
+    /* --- エネルギー --- */
+    state.energy -= (0.35 + (input.accel ? 0.45 : 0)) * dt;
+    if (state.energy <= 0){
+      state.energy = 0; state.mode = 'fail'; sfxFail();
+      $('resultTitle').textContent = '⚠️ エネルギー切れ…';
+      $('resultText').innerHTML = 'ミッション失敗。<br>アクセルの使いすぎに注意して、もういちどチャレンジ！';
+      $('result').classList.remove('hidden');
+    }
+
+    /* --- ミッション判定 --- */
+    const tgt = currentTarget();
+    if (tgt.kind === 'rock'){
+      if (tgt.d < CATCH_DIST){
+        if (Math.abs(state.speed) < CATCH_SPEED){
+          setMsg('👉 いまだ！ C でキャッチ！', 'alert'); btnC.classList.add('ready');
+        } else {
+          setMsg('スピードが速すぎる！ B でブレーキ！', 'warn'); btnC.classList.remove('ready');
+        }
+      } else if (tgt.d < 30){
+        setMsg(`月の石まで ${tgt.d.toFixed(0)}m … Bで減速の準備`, 'alert'); btnC.classList.remove('ready');
+      } else {
+        setMsg(`月の石まで ${tgt.d.toFixed(0)}m（のこり${2-state.got}個）`, ''); btnC.classList.remove('ready');
+      }
+    } else {
+      btnC.classList.remove('ready');
+      if (tgt.d < HOME_DIST && Math.abs(state.speed) < HOME_SPEED && state.grounded){
+        state.homeDwell += dt;
+        setMsg('停止確認中…', 'alert');
+        if (state.homeDwell > 0.7){
+          state.mode = 'success'; sfxOK();
+          $('resultTitle').textContent = '🎉 ミッションコンプリート！';
+          $('resultText').innerHTML =
+            `月の石を2個回収して、ぶじ帰還！<br>のこりエネルギー: <b style="color:#8fe08f">${state.energy.toFixed(0)}%</b>`;
+          $('result').classList.remove('hidden');
+        }
+      } else {
+        state.homeDwell = 0;
+        if (tgt.d < HOME_DIST) setMsg('パッドの上で完全に停止しよう！', 'warn');
+        else if (tgt.d < 30) setMsg(`基地まで ${tgt.d.toFixed(0)}m … Bで減速の準備`, 'alert');
+        else setMsg(`基地にもどろう（あと ${tgt.d.toFixed(0)}m）`, '');
+      }
+    }
+
+    /* --- HUD --- */
+    const ep = state.energy / ENERGY_MAX * 100;
+    energyFill.style.width = ep + '%';
+    energyFill.style.background = ep > 50 ? 'linear-gradient(90deg,#37e08a,#a6e837)'
+      : ep > 25 ? 'linear-gradient(90deg,#e8c837,#e89a37)' : 'linear-gradient(90deg,#e85a37,#e83737)';
+    energyPct.textContent = ep.toFixed(0) + '%';
+    speedo.textContent = (Math.abs(state.speed) * 3.6).toFixed(0) + ' km/h';
+
+    /* --- エンジン音 --- */
+    if (AC && engineGain){
+      engineOsc.frequency.value = 35 + Math.abs(state.speed) * 6 + (input.accel ? 18 : 0);
+      const target = (state.grounded && (Math.abs(state.speed) > 0.3 || input.accel)) ? 0.05 + Math.abs(state.speed)*0.003 : 0.012;
+      engineGain.gain.setTargetAtTime(target, AC.currentTime, 0.1);
+    }
+  }
+
+  /* --- 車の見た目 --- */
+  car.position.set(state.x, state.y, state.z);
+  car.rotation.y = state.heading;
+  {
+    const fx = Math.sin(state.heading), fz = Math.cos(state.heading);
+    const rx = Math.cos(state.heading), rz = -Math.sin(state.heading);
+    const hF = terrainHeight(state.x + fx*0.9, state.z + fz*0.9);
+    const hB = terrainHeight(state.x - fx*0.9, state.z - fz*0.9);
+    const hR = terrainHeight(state.x + rx*0.65, state.z + rz*0.65);
+    const hL = terrainHeight(state.x - rx*0.65, state.z - rz*0.65);
+    const targetPitch = state.grounded ? -Math.atan2(hF - hB, 1.8) : 0.08;
+    const targetRoll  = state.grounded ?  Math.atan2(hR - hL, 1.3) : car.rotation.z;
+    car.rotation.x += (targetPitch - car.rotation.x) * Math.min(1, dt*6);
+    car.rotation.z += (targetRoll  - car.rotation.z) * Math.min(1, dt*6);
+    for (const w of car.userData.wheels) w.rotation.x += state.speed * dt * 2.4;
+  }
+
+  /* --- カメラ (後方追従) --- */
+  const back = new THREE.Vector3(-Math.sin(state.heading), 0, -Math.cos(state.heading));
+  const desired = new THREE.Vector3(state.x, state.y, state.z)
+    .addScaledVector(back, 8.5).add(new THREE.Vector3(0, 4.6, 0));
+  camPos.lerp(desired, 1 - Math.exp(-dt * 3.5));
+  camera.position.copy(camPos);
+  camera.lookAt(state.x, state.y + 1.6, state.z);
+
+  /* --- 影カメラ追従 --- */
+  sun.position.set(state.x + sunDir.x*120, sunDir.y*120, state.z + sunDir.z*120);
+  sun.target.position.set(state.x, 0, state.z);
+
+  /* --- 石の演出 --- */
+  for (const r of rocks){
+    if (r.got) continue;
+    r.mesh.rotation.y = t * 0.6;
+    r.mesh.position.y = 0.75 + Math.sin(t*2 + r.x) * 0.15;   // 低重力でふわふわ
+    r.mesh.material.emissiveIntensity = 0.2 + (Math.sin(t*3)+1)*0.2;
+    const near = Math.hypot(r.x-state.x, r.z-state.z) < CATCH_DIST;
+    const slow = Math.abs(state.speed) < CATCH_SPEED;
+    r.ring.material.color.setHex(near && slow ? 0x5aff9d : 0xffd75e);
+    r.ring.material.opacity = 0.35 + (Math.sin(t*4)+1)*0.2;
+    r.beam.material.opacity = 0.14 + (Math.sin(t*2)+1)*0.06;
+  }
+  homeGroup.userData.ring.material.opacity = 0.55 + (Math.sin(t*3)+1)*0.22;
+
+  /* --- キャッチリング拡大 --- */
+  if (catchRingT >= 0){
+    catchRingT += dt;
+    const s = 1 + catchRingT * 10;
+    catchRing.scale.set(s, s, s);
+    catchRing.material.opacity = Math.max(0, 0.9 - catchRingT * 1.1);
+    if (catchRingT > 1) { catchRingT = -1; catchRing.material.opacity = 0; }
+  }
+
+  updateParticles(dust, dt, G * 0.7);
+  updateParticles(sparkle, dt, G * 0.5);
+  if (texDirty){ groundTex.needsUpdate = true; texDirty = false; }
+  drawRadar();
+  updateFlare();
+  renderer.render(scene, camera);
+}
+
+/* ================= 開始/リトライ ================= */
+$('startBtn').addEventListener('pointerdown', e => {
+  e.preventDefault(); initAudio();
+  $('intro').classList.add('hidden');
+  reset(); state.mode = 'play';
+});
+$('retryBtn').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  $('result').classList.add('hidden');
+  reset(); state.mode = 'play';
+});
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
